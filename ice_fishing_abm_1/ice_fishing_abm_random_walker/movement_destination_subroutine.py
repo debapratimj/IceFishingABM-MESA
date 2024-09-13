@@ -77,32 +77,46 @@ class RandomWalkerExplorationStrategy(ExplorationStrategy):
 
     def _levy_flight(self):
         """
-        Implement Levy flight, sampling distance and angle
+        Sample a displacement distance using a Levy flight distribution and ensure
+        the distance is within the given bounds (dmin and L).
         """
-        # Sample distance from a power-law distribution with exponent mu
-        distance = self.C * np.random.uniform(self.dmin, self.L) ** (-self.mu)
-        # Sample the angle uniformly from [0, 2π]
-        angle = np.random.uniform(0, 2 * np.pi)
-        # Convert polar coordinates (distance, angle) to Cartesian displacement
-        dx = distance * np.cos(angle)
-        dy = distance * np.sin(angle)
+        # Sample from a uniform distribution
+        u = np.random.uniform(0, 1)
+        
+        # Use inverse transform sampling to get d from P(d) = C d^(-mu)
+        # Ensure the distance lies between dmin and L
+        d = ((self.L**(1 - self.mu) - self.dmin**(1 - self.mu)) * u + self.dmin**(1 - self.mu))**(1 / (1 - self.mu))
+        
+        # Sample a random angle uniformly between 0 and 2π
+        theta = np.random.uniform(0, 2 * np.pi)
 
-        # Find new destination
-        destination = self._get_new_position(dx, dy)
-        return destination
+        # Convert polar coordinates (d, θ) into Cartesian coordinates (dx, dy)
+        dx = d * np.cos(theta)
+        dy = d * np.sin(theta)
 
+        # Assume current position is the center of the grid (grid_size / 2, grid_size / 2)
+        current_pos = np.array([self.grid_size // 2, self.grid_size // 2])
+
+        # Compute the new position and ensure it's within the grid boundaries
+        new_position = np.clip(current_pos + np.array([dx, dy]), 0, self.grid_size - 1)
+        return new_position
+    
     def _adjust_for_social_cue(self, current_destination, social_locs):
         """
         Adjust destination based on social cues, if detected
         """
         if social_locs.size > 0:
-            # Adjust the destination based on proximity to social cues
-            delta_d = np.linalg.norm(current_destination - social_locs, axis=1).min()
+            # Find the nearest social cue
+            distances = np.linalg.norm(social_locs - current_destination, axis=1)
+            nearest_social_loc = social_locs[np.argmin(distances)]
+
+            # Compute probability to switch to the nearest social cue based on distance
+            delta_d = distances.min()
             prob_social = np.exp(-self.alpha * delta_d)
 
-            # With probability prob_social, switch to the social cue location
+            # With probability prob_social, move to the nearest social cue
             if np.random.rand() < prob_social:
-                current_destination = social_locs[np.random.choice(social_locs.shape[0])]
+                current_destination = nearest_social_loc
 
         return current_destination
 
